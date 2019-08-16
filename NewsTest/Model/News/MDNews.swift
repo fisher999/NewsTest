@@ -14,9 +14,6 @@ class MDNews {
         var hasher = Hasher()
         hasher.combine(title)
         hasher.combine(description)
-        hasher.combine(date)
-        hasher.combine(imageData)
-        
         return hasher.finalize()
     }
     let title: String?

@@ -31,6 +31,9 @@ class NewsListViewModel {
     var alert: Signal<(String , (() -> Void)?), NoError>
     fileprivate var alertObserver: Signal<(String , (() -> Void)?), NoError>.Observer
     
+    fileprivate(set) var _refresh: MutableProperty<Bool> = MutableProperty<Bool>.init(false)
+    lazy var refresh: Property<Bool> = Property<Bool>.init(_refresh)
+    
     fileprivate(set) var _loading: MutableProperty<Bool> = MutableProperty<Bool>.init(false)
     lazy var loading: Property<Bool> = Property<Bool>.init(_loading)
     
@@ -61,13 +64,12 @@ class NewsListViewModel {
 //MARK: -Network
 extension NewsListViewModel {
     private func getNews() {
-        print(router.absoluteUrl)
-        self._loading.value = true
+        currentPage = 0
+        self._refresh.value = true
         network.request(router: router) { [weak self] (response) in
             print(response)
-            
+            self?._refresh.value = false
             if let error = response.error {
-                self?._loading.value = false
                 if let err = error as? URLError, err.code  == URLError.Code.notConnectedToInternet
                 {
                     self?.alertObserver.send(value: ("Проверьте подключение к сети", { [weak self] in
@@ -81,6 +83,9 @@ extension NewsListViewModel {
             }
             
             if let data = response.data, let articles = JSON(data)["articles"].array {
+                self?._refresh.value = false
+                self?.loadingNews = []
+                self?.reloadObserver.send(value: ())
                 self?.allNews = articles.map({ (json) -> MDNews in
                     return MDNews(from: json)
                 })
@@ -104,6 +109,12 @@ extension NewsListViewModel {
 
 //MARK: View events
 extension NewsListViewModel {
+    func reloadNews() {
+        if refresh.value == false {
+            getNews()
+        }
+    }
+    
     func preloadNextPage() {
         if canPreload {
             canPreload = false
@@ -142,8 +153,6 @@ extension NewsListViewModel {
         }
         
         self.loadingNews.append(contentsOf: loadedNews)
-        saveNews()
-        
         self.newsDidLoadObserver.send(value: indexPaths)
     }
 }
@@ -160,24 +169,24 @@ extension NewsListViewModel {
     
     private func fetchNews() {
         do {
+            let oldValue = self.loadingNews
             self.loadingNews = try newsData.getNewsList()
             if self.loadingNews.count == 0 {
                 alertObserver.send(value: ("Закешированный список новостей отсутствует", nil))
             }
-            preloadFetchedNews()
+            preloadFetchedNews(oldValue: oldValue)
         }
         catch {
             alertObserver.send(value: (error.localizedDescription, nil))
         }
     }
     
-    private func preloadFetchedNews() {
+    private func preloadFetchedNews(oldValue: [MDNews]) {
         var indexPaths: [IndexPath] = []
         for (index,_) in self.loadingNews.enumerated() {
             let indexPath = IndexPath(row: index, section: 0)
             indexPaths.append(indexPath)
         }
-        
         self.newsDidLoadObserver.send(value: indexPaths)
     }
 }

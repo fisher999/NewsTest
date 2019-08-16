@@ -16,6 +16,8 @@ class NewsListController: UIViewController {
     @IBOutlet fileprivate weak var tableView: UITableView!
     @IBOutlet fileprivate weak var activityIndicator: UIActivityIndicatorView!
     
+    fileprivate var refreshControl = UIRefreshControl(frame: .zero)
+    
     private var viewModel: NewsListViewModel
     
     init(viewModel: NewsListViewModel) {
@@ -41,6 +43,9 @@ class NewsListController: UIViewController {
         self.tableView.delegate = self
         self.tableView.allowsSelection = false
         
+        self.tableView.refreshControl = refreshControl
+        refreshControl.addTarget(self, action: #selector(update), for: .valueChanged)
+        
         self.tableView.estimatedRowHeight = 370
         self.tableView.rowHeight = UITableView.automaticDimension
         
@@ -57,6 +62,7 @@ class NewsListController: UIViewController {
         })
         self.alert <~ viewModel.alert
         self.tableView.reactive.reloadData <~ viewModel.reload
+        self.refreshControl.reactive.isRefreshing <~ viewModel.refresh
     }
 }
 
@@ -77,6 +83,13 @@ extension NewsListController {
         return BindingTarget<(String, (() -> Void)?)>.init(lifetime: lifetime, action: { (message, completion) in
             self.alert(message: message, handler: completion)
         })
+    }
+}
+
+//Actions
+extension NewsListController {
+    @objc private func update() {
+        viewModel.reloadNews()
     }
 }
 
