@@ -31,10 +31,10 @@ class NewsListViewModel {
     var alert: Signal<(String , (() -> Void)?), NoError>
     fileprivate var alertObserver: Signal<(String , (() -> Void)?), NoError>.Observer
     
-    fileprivate(set) var _refresh: MutableProperty<Bool> = MutableProperty<Bool>.init(false)
+    fileprivate var _refresh: MutableProperty<Bool> = MutableProperty<Bool>.init(false)
     lazy var refresh: Property<Bool> = Property<Bool>.init(_refresh)
     
-    fileprivate(set) var _loading: MutableProperty<Bool> = MutableProperty<Bool>.init(false)
+    fileprivate var _loading: MutableProperty<Bool> = MutableProperty<Bool>.init(false)
     lazy var loading: Property<Bool> = Property<Bool>.init(_loading)
     
     private var _newsDidLoad: Signal<[IndexPath], NoError>
@@ -47,7 +47,10 @@ class NewsListViewModel {
         return _newsDidLoad.delay(1.5, on: QueueScheduler.main)
     }
     
-    init(newsData: NewsData = NewsData.shared, network: Network = Network.shared, router: Router = NewsService.topHeadlines) {
+    //MARK: -Init
+    init(newsData: NewsData = NewsData.shared,
+         network: Network = Network.shared,
+         router: Router = NewsService.topHeadlines) {
         self.newsData = newsData
         self.network = network
         self.router = router
@@ -65,32 +68,38 @@ class NewsListViewModel {
 extension NewsListViewModel {
     private func getNews() {
         currentPage = 0
+        canPreload = true
         self._refresh.value = true
         network.request(router: router) { [weak self] (response) in
-            print(response)
             self?._refresh.value = false
-            if let error = response.error {
-                if let err = error as? URLError, err.code  == URLError.Code.notConnectedToInternet
-                {
-                    self?.alertObserver.send(value: ("Проверьте подключение к сети", { [weak self] in
-                        self?.fetchNews()
-                    }))
-                }
-                else {
-                    self?.alertObserver.send(value: (error.localizedDescription, nil))
-                }
-                return
-            }
-            
-            if let data = response.data, let articles = JSON(data)["articles"].array {
-                self?._refresh.value = false
-                self?.loadingNews = []
-                self?.reloadObserver.send(value: ())
-                self?.allNews = articles.map({ (json) -> MDNews in
-                    return MDNews(from: json)
-                })
-                self?.preloadNextPage()
-            }
+            self?.checkResponse(response)
+        }
+    }
+    
+    private func checkResponse(_ response: DefaultDataResponse) {
+        if let error = response.error {
+            checkError(error)
+            return
+        }
+        
+        if let data = response.data, let articles = JSON(data)["articles"].array {
+            self._refresh.value = false
+            self.loadingNews = []
+            self.reloadObserver.send(value: ())
+            self.allNews = articles.map({ (json) -> MDNews in
+                return MDNews(from: json)
+            })
+            self.preloadNextPage()
+        }
+    }
+    
+    private func checkError(_ error: Error) {
+        if let err = error as? URLError, err.code  == URLError.Code.notConnectedToInternet {
+            self.alertObserver.send(value: ("Проверьте подключение к сети", { [weak self] in
+                self?.fetchNews()
+            }))
+        } else {
+            self.alertObserver.send(value: (error.localizedDescription, nil))
         }
     }
 }
@@ -131,10 +140,10 @@ extension NewsListViewModel {
     private func preloadNews(at page: Int) {
         self._loading.value = true
         var count: Int
+        
         if numberOfNews * (page + 1) > self.allNews.count {
             count = self.allNews.count - numberOfNews * page
-        }
-        else {
+        } else {
             count = numberOfNews
         }
         
@@ -161,8 +170,8 @@ extension NewsListViewModel {
 extension NewsListViewModel {
     private func saveNews() {
         DispatchQueue.global().async {
-            self.newsData.saveNewsList(model: self.allNews, failed: { (error) in
-                self.alertObserver.send(value: (error.localizedDescription, nil))
+            self.newsData.saveNewsList(model: self.allNews, failed: { [weak self] (error) in
+                self?.alertObserver.send(value: (error.localizedDescription, nil))
             })
         }
     }
@@ -175,8 +184,7 @@ extension NewsListViewModel {
                 alertObserver.send(value: ("Закешированный список новостей отсутствует", nil))
             }
             preloadFetchedNews(oldValue: oldValue)
-        }
-        catch {
+        } catch {
             alertObserver.send(value: (error.localizedDescription, nil))
         }
     }
@@ -187,6 +195,6 @@ extension NewsListViewModel {
             let indexPath = IndexPath(row: index, section: 0)
             indexPaths.append(indexPath)
         }
-        self.newsDidLoadObserver.send(value: indexPaths)
+        self.reloadObserver.send(value: ())
     }
 }
