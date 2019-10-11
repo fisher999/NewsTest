@@ -166,9 +166,9 @@ extension NewsListViewModel {
 extension NewsListViewModel {
   private func saveNews() {
     DispatchQueue.global().async {
-      self.newsData.saveNewsList(model: self.allNews, failed: { [weak self] (error) in
+      self.newsData.saveNewsList(model: self.allNews) {[weak self] (error) in
         self?.alertObserver.send(value: (error.localizedDescription, nil))
-      })
+      }
     }
   }
   
